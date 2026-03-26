@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: prometheus
+  namespace: kube-system
+spec:
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: prometheus
+  targetNamespace: monitoring
+  valuesContent: |-
+    alertmanager:
+      enabled: false
+    server:
+      persistentVolume:
+        size: 5Gi
+      retention: 7d
+    pushgateway:
+      enabled: false

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x /home/johanm/.personal/scripts/*.sh /home/johanm/.personal/cluster/bootstrap/*.sh)",
+      "Bash(k3s --version)",
+      "Bash(kubectl version:*)",
+      "Bash(curl -sfL https://get.k3s.io)",
+      "Bash(sh -)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl get nodes)",
+      "Bash(export KUBECONFIG=~/.kube/config-k3s)",
+      "Bash(kubectl apply:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl delete:*)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl get pods -A)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl describe pod ingress-nginx-controller-gppgs -n ingress-nginx)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl apply -f /home/johanm/.personal/cluster/addons/cert-manager/clusterissuer-selfsigned.yaml)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl apply -f /home/johanm/.personal/cluster/addons/ingress-nginx/ingress-nginx.yaml)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl get pods -n ingress-nginx)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl get pods -A --field-selector=status.phase!=Succeeded)",
+      "Bash(chmod:*)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl apply -f /home/johanm/.personal/infrastructure/monitoring/grafana/grafana.yaml)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl apply -f /home/johanm/.personal/infrastructure/monitoring/grafana/dashboard-cluster-overview.yaml)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana)",
+      "Bash(KUBECONFIG=~/.kube/config-k3s kubectl rollout restart deployment/grafana -n monitoring)"
+    ]
+  }
+}
