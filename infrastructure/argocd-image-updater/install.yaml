@@ -1,0 +1,16 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argocd-image-updater
+  namespace: kube-system
+spec:
+  repo: https://argoproj.github.io/argo-helm
+  chart: argocd-image-updater
+  targetNamespace: argocd
+  valuesContent: |-
+    config:
+      registries:
+        - name: Docker Hub
+          prefix: docker.io
+          api_url: https://registry-1.docker.io
+          default: true
