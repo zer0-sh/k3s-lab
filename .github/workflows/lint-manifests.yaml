@@ -1,0 +1,119 @@
+name: Lint Kubernetes Manifests
+
+on:
+  pull_request:
+    paths:
+      - "apps/**/*.yaml"
+      - "cluster/**/*.yaml"
+      - "infrastructure/**/*.yaml"
+      - "argocd-apps/**/*.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/**/*.yaml"
+      - "cluster/**/*.yaml"
+      - "infrastructure/**/*.yaml"
+      - "argocd-apps/**/*.yaml"
+  workflow_dispatch:
+
+jobs:
+  kube-linter:
+    name: KubeLinter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kube-linter
+        run: |
+          curl -sLO https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux
+          chmod +x kube-linter-linux
+          sudo mv kube-linter-linux /usr/local/bin/kube-linter
+
+      - name: Lint apps/
+        id: lint_apps
+        continue-on-error: true
+        run: |
+          kube-linter lint apps/ --format json > lint-apps.json 2>&1 || true
+          kube-linter lint apps/ > lint-apps.txt 2>&1 || true
+
+      - name: Lint infrastructure/
+        id: lint_infra
+        continue-on-error: true
+        run: |
+          kube-linter lint infrastructure/ --format json > lint-infra.json 2>&1 || true
+          kube-linter lint infrastructure/ > lint-infra.txt 2>&1 || true
+
+      - name: Lint cluster/
+        id: lint_cluster
+        continue-on-error: true
+        run: |
+          kube-linter lint cluster/ --format json > lint-cluster.json 2>&1 || true
+          kube-linter lint cluster/ > lint-cluster.txt 2>&1 || true
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## 🔍 KubeLinter Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          for dir in apps infrastructure cluster; do
+            FILE="lint-${dir}.txt"
+            if [ -f "$FILE" ]; then
+              ERRORS=$(grep -c "Error" "$FILE" 2>/dev/null || echo "0")
+              WARNINGS=$(grep -c "Warning" "$FILE" 2>/dev/null || echo "0")
+
+              if [ "$ERRORS" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+                echo "### ✅ ${dir}/" >> "$GITHUB_STEP_SUMMARY"
+                echo "No issues found." >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "### ⚠️ ${dir}/ — ${ERRORS} errors, ${WARNINGS} warnings" >> "$GITHUB_STEP_SUMMARY"
+                echo "<details><summary>View details</summary>" >> "$GITHUB_STEP_SUMMARY"
+                echo "" >> "$GITHUB_STEP_SUMMARY"
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+                cat "$FILE" >> "$GITHUB_STEP_SUMMARY"
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+                echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              echo "### ⏭️ ${dir}/ — skipped (no YAML found)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  yamllint:
+    name: YAML Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        id: yamllint
+        continue-on-error: true
+        run: |
+          yamllint -f github . > yamllint-output.txt 2>&1 || true
+          yamllint -f standard . > yamllint-detail.txt 2>&1 || true
+
+      - name: Generate summary
+        if: always()
+        run: |
+          ISSUES=$(wc -l < yamllint-detail.txt 2>/dev/null || echo "0")
+          echo "## 📝 YAML Syntax Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$ISSUES" -eq 0 ]; then
+            echo "✅ All YAML files are valid." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Found issues in YAML files:" >> "$GITHUB_STEP_SUMMARY"
+            echo "<details><summary>View details (${ISSUES} lines)</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            head -100 yamllint-detail.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+          fi

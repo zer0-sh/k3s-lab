@@ -1,0 +1,161 @@
+name: Auto Rollback
+
+on:
+  workflow_run:
+    workflows: ["Build & Push Sample App"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "ArgoCD app to rollback"
+        required: true
+        default: "sample-app"
+        type: choice
+        options:
+          - sample-app
+          - postgres
+          - infrastructure
+
+env:
+  ARGOCD_SERVER: localhost:8080
+
+jobs:
+  health-check:
+    name: Post-Deploy Health Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      healthy: ${{ steps.check.outputs.healthy }}
+      app_name: ${{ steps.set-app.outputs.app_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set app name
+        id: set-app
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "app_name=${{ inputs.app_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_name=sample-app" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Wait for ArgoCD sync
+        env:
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app wait ${{ steps.set-app.outputs.app_name }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --grpc-web \
+            --timeout 120 || true
+
+      - name: Check app health
+        id: check
+        env:
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          HEALTH=$(argocd app get ${{ steps.set-app.outputs.app_name }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --grpc-web \
+            -o json | jq -r '.status.health.status')
+
+          SYNC=$(argocd app get ${{ steps.set-app.outputs.app_name }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --grpc-web \
+            -o json | jq -r '.status.sync.status')
+
+          echo "health=${HEALTH}" >> "$GITHUB_OUTPUT"
+          echo "sync=${SYNC}" >> "$GITHUB_OUTPUT"
+
+          if [ "$HEALTH" == "Healthy" ] && [ "$SYNC" == "Synced" ]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate summary
+        if: always()
+        run: |
+          APP="${{ steps.set-app.outputs.app_name }}"
+          HEALTHY="${{ steps.check.outputs.healthy }}"
+
+          echo "## 🏥 Post-Deploy Health Check — \`${APP}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| Check | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Health | \`${{ steps.check.outputs.health }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Sync | \`${{ steps.check.outputs.sync }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HEALTHY" == "true" ]; then
+            echo "✅ **App is healthy. No rollback needed.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⛔ **App is unhealthy. Triggering rollback...**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: needs.health-check.outputs.healthy == 'false'
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Get previous revision
+        id: prev
+        env:
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          HISTORY=$(argocd app history ${{ needs.health-check.outputs.app_name }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --grpc-web \
+            -o json)
+
+          PREV_ID=$(echo "$HISTORY" | jq -r '.[-2].id // empty')
+          echo "revision=${PREV_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Rollback app
+        env:
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app rollback ${{ needs.health-check.outputs.app_name }} \
+            ${{ steps.prev.outputs.revision }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --grpc-web
+
+      - name: Wait for rollback sync
+        env:
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app wait ${{ needs.health-check.outputs.app_name }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --grpc-web \
+            --timeout 120
+
+      - name: Generate summary
+        if: always()
+        run: |
+          APP="${{ needs.health-check.outputs.app_name }}"
+          REV="${{ steps.prev.outputs.revision }}"
+
+          echo "## ⏪ Rollback Executed — \`${APP}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Detail | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| App | \`${APP}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rolled back to | revision \`${REV}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trigger | Unhealthy after deploy |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "⚠️ **Review the failed deployment and fix before re-deploying.**" >> "$GITHUB_STEP_SUMMARY"
