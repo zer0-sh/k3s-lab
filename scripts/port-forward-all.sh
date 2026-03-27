@@ -11,6 +11,9 @@ declare -A SERVICES=(
   ["Prometheus"]="svc/prometheus-server -n monitoring 9090:80"
   ["Sample App"]="svc/sample-app -n sample-app 8081:80"
   ["Loki"]="svc/loki -n logging 3100:3100"
+  ["pgAdmin"]="svc/pgadmin -n postgres 5050:80"
+  ["PostgreSQL"]="svc/postgres -n postgres 5432:5432"
+  ["SonarQube"]="svc/sonarqube -n sonarqube 9001:9000"
 )
 
 PIDS=()
@@ -40,6 +43,9 @@ echo "  Grafana:    http://localhost:3000   (admin / admin)"
 echo "  Prometheus: http://localhost:9090"
 echo "  Sample App: http://localhost:8081"
 echo "  Loki:       http://localhost:3100/ready"
+echo "  pgAdmin:    http://localhost:5050   (admin@devlab.com / admin123)"
+echo "  PostgreSQL: localhost:5432          (admin / admin123)"
+echo "  SonarQube:  http://localhost:9001   (admin / admin)"
 echo ""
 echo "Password ArgoCD:"
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d && echo ""
