@@ -3,6 +3,10 @@ kind: Application
 metadata:
   name: sample-app
   namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: sample=steven58380/k3s-sample-app
+    argocd-image-updater.argoproj.io/sample.update-strategy: latest
+    argocd-image-updater.argoproj.io/write-back-method: git
 spec:
   project: default
   source:
