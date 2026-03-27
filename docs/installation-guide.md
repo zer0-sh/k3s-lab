@@ -3,7 +3,7 @@
 ## Requisitos previos
 
 - Linux (Ubuntu 20.04+ recomendado)
-- 2 CPU / 4GB RAM minimo
+- 2 CPU / 4GB RAM minimo (8GB recomendado si se incluye SonarQube)
 - Acceso root o sudo
 - curl instalado
 
@@ -18,38 +18,63 @@ cd k3s-platform
 
 ```bash
 chmod +x scripts/*.sh
-./scripts/bootstrap.sh
+bash scripts/bootstrap.sh
 ```
 
-Esto instala K3s, los addons del cluster y ArgoCD.
+Esto instala K3s, configura kubeconfig, instala los addons del cluster (Ingress NGINX, Cert-Manager) y ArgoCD.
+
+> **Nota:** K3s v1.34+ ya incluye Metrics Server, no es necesario instalarlo por separado.
 
 ## Paso 3: Desplegar infraestructura
 
 ```bash
-./scripts/deploy-infra.sh
+bash scripts/deploy-infra.sh
 ```
 
 Esto despliega Prometheus, Grafana, Loki y registra las apps en ArgoCD.
 
-## Paso 4: Acceder a los servicios
+## Paso 4: Desplegar componentes adicionales
 
-### ArgoCD
+### PostgreSQL + pgAdmin
 ```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-# Abrir https://localhost:8080
-# Usuario: admin
-# Password:
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+kubectl apply -f apps/postgres/
+kubectl apply -f argocd-apps/postgres.yaml
 ```
 
-### Grafana
+### SonarQube
 ```bash
-kubectl port-forward svc/grafana -n monitoring 3000:80
-# Abrir http://localhost:3000
-# Usuario: admin / Password: admin
+kubectl apply -f infrastructure/sonarqube/
+kubectl apply -f argocd-apps/sonarqube.yaml
 ```
 
-## Paso 5: Verificar
+### ArgoCD Image Updater
+```bash
+kubectl apply -f infrastructure/argocd-image-updater/install.yaml
+kubectl apply -f argocd-apps/sample-app.yaml
+```
+
+## Paso 5: Acceder a los servicios
+
+La forma mas rapida es usar el script de port-forward:
+
+```bash
+bash scripts/port-forward-all.sh
+```
+
+Esto expone todos los servicios:
+
+| Servicio | URL | Credenciales |
+|----------|-----|-------------|
+| ArgoCD | https://localhost:8080 | admin / (auto) |
+| Grafana | http://localhost:3000 | admin / admin |
+| Prometheus | http://localhost:9090 | - |
+| SonarQube | http://localhost:9001 | admin / admin |
+| pgAdmin | http://localhost:5050 | admin@devlab.com / admin123 |
+| Sample App | http://localhost:8081 | - |
+
+Para mas detalles ver [access-services.md](access-services.md).
+
+## Paso 6: Verificar
 
 ```bash
 kubectl get nodes
@@ -57,10 +82,12 @@ kubectl get pods -A
 kubectl get applications -n argocd
 ```
 
+Deberian aparecer 4 aplicaciones en ArgoCD: `sample-app`, `infrastructure`, `postgres`, `sonarqube`.
+
 ## Limpieza
 
 Para eliminar todo el entorno:
 
 ```bash
-./scripts/cleanup.sh
+bash scripts/cleanup.sh
 ```
