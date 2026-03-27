@@ -1,0 +1,49 @@
+name: SonarQube Analysis
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sonarqube:
+    name: SonarQube Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Generate summary
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          echo "## 📊 SonarQube Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$SONAR_HOST_URL" ]; then
+            echo "⚠️ \`SONAR_HOST_URL\` not configured. Add it to repo secrets." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          PROJECT_KEY=$(grep "sonar.projectKey" sonar-project.properties 2>/dev/null | cut -d= -f2 || echo "k3s-platform")
+          DASHBOARD_URL="${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY}"
+
+          echo "| Metric | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Project | \`${PROJECT_KEY}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Server | ${SONAR_HOST_URL} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Dashboard | [View results](${DASHBOARD_URL}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ Analysis submitted. Check the [SonarQube dashboard](${DASHBOARD_URL}) for detailed results." >> "$GITHUB_STEP_SUMMARY"
